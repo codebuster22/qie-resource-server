@@ -44,6 +44,9 @@ if (!QUSD_ADDRESS) {
 // Note: QIE is not in the default x402 Network type, but the custom Facilitator supports it
 const QIE_NETWORK = "eip155:1990" as Network;
 
+// Base URL for production (handles reverse proxy HTTPS termination)
+const BASE_URL = process.env.BASE_URL; // e.g., "https://qie-resource-server-production.up.railway.app"
+
 // Create Hono app
 const app = new Hono();
 
@@ -53,6 +56,21 @@ const PRICE_ATOMIC = "0.01";
 
 const  paywallConfig = {
     appName: 'x402 on QIE',
+    // Use BASE_URL to ensure correct HTTPS URLs behind reverse proxy
+    ...(BASE_URL && { baseUrl: BASE_URL }),
+}
+
+// Helper to fix HTTP URLs to HTTPS when behind reverse proxy
+function fixUrlProtocol(url: string): string {
+  if (BASE_URL && url.startsWith("http://")) {
+    // Replace http:// with the BASE_URL's protocol
+    const urlObj = new URL(url);
+    const baseUrlObj = new URL(BASE_URL);
+    urlObj.protocol = baseUrlObj.protocol;
+    urlObj.host = baseUrlObj.host;
+    return urlObj.toString();
+  }
+  return url;
 }
 
 const qiePaywall: PaywallNetworkHandler = {
@@ -68,10 +86,14 @@ const qiePaywall: PaywallNetworkHandler = {
         ? parseFloat(requirement.maxAmountRequired) / 1000000
         : 0;
 
+    // Fix the URL to use HTTPS when behind a reverse proxy
+    const rawUrl = paymentRequired.resource?.url || config.currentUrl || "";
+    const currentUrl = fixUrlProtocol(rawUrl);
+
     return getEvmPaywallHtml({
       amount,
       paymentRequired,
-      currentUrl: paymentRequired.resource?.url || config.currentUrl || "",
+      currentUrl,
       testnet: config.testnet ?? true,
       appName: config.appName,
       appLogo: config.appLogo,
